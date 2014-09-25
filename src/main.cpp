@@ -20,8 +20,8 @@
 using namespace std;
 using namespace cv;
 
-void loadImagePair(Mat &img1, Mat &img2, int i) {
-
+void loadImagePair(Mat &img1, Mat &img2, int i)
+{
     stringstream ss1, ss2;
 
     ss1 << "images/imgLeft_" << i << ".png";
@@ -29,6 +29,59 @@ void loadImagePair(Mat &img1, Mat &img2, int i) {
 
     img1 = imread(ss1.str());
     img2 = imread(ss2.str());
+}
+
+void correspondenciaBM(Mat &imagenIzq, Mat &imagenDer)
+{
+	Mat imagenIzq1CH, imagenDer1CH;
+
+	Mat MapaDispBM(imagenIzq.size().height, imagenIzq.size().width, CV_16S, Scalar(0));
+	Mat MapaDispBM_Norm(imagenIzq.size().height, imagenIzq.size().width, CV_8U, Scalar(0));
+
+	StereoBM stereoBM;
+
+	stereoBM.state->preFilterType = 1;
+	stereoBM.state->preFilterSize = 41;
+	stereoBM.state->preFilterCap = 31;
+	stereoBM.state->SADWindowSize = 31;
+	stereoBM.state->minDisparity = -65;
+	stereoBM.state->numberOfDisparities = 128;
+	stereoBM.state->textureThreshold = 10;
+	stereoBM.state->uniquenessRatio = 15;
+
+	cvtColor(imagenIzq, imagenIzq1CH, CV_BGR2GRAY); //Convierte las imagenes a CV_8UC1 (1 canal)
+	cvtColor(imagenDer, imagenDer1CH, CV_BGR2GRAY);
+
+	stereoBM(imagenIzq1CH, imagenDer1CH, MapaDispBM);
+
+	normalize(MapaDispBM, MapaDispBM_Norm, 0, 255, CV_MINMAX, CV_8U);
+
+	imshow("Mapa de Disparidad StereoBM", MapaDispBM_Norm);
+}
+
+void correspondenciaSGBM(Mat &imagenIzq, Mat &imagenDer)
+{
+	Mat MapaDispSGBM, MapaDispSGBM_Norm;
+
+	StereoSGBM stereoSGBM;
+
+	stereoSGBM.SADWindowSize = 3;
+	stereoSGBM.numberOfDisparities = 144;
+	stereoSGBM.preFilterCap = 63;
+	stereoSGBM.minDisparity = -39;
+	stereoSGBM.uniquenessRatio = 10;
+	stereoSGBM.speckleWindowSize = 100;
+	stereoSGBM.speckleRange = 32;
+	stereoSGBM.disp12MaxDiff = 1;
+	stereoSGBM.fullDP = false;
+	stereoSGBM.P1 = 216;
+	stereoSGBM.P2 = 864;
+
+	stereoSGBM(imagenIzq, imagenDer, MapaDispSGBM);
+
+	normalize(MapaDispSGBM, MapaDispSGBM_Norm, 0, 255, CV_MINMAX, CV_8U);
+
+	imshow("Mapa de Disparidad StereoSGBM", MapaDispSGBM_Norm);
 }
 
 int main(int argc, char *argv[])
@@ -220,8 +273,8 @@ int main(int argc, char *argv[])
 					// Whether the chessboard corners in the images were found
 					bool found1 = false, found2 = false;
 
-					while (i < imageCount) {
-
+					while (i < imageCount)
+					{
 						// Load the images
 						cout << "Attempting to load image pair " << i << endl;
 						loadImagePair(img1, img2, i);
@@ -413,35 +466,124 @@ int main(int argc, char *argv[])
 					cout << "Imagen Derecha Rectificada ¡Guardada!" << endl;
 					imwrite("imgRightRect.png", imgUDer);
 
-					Mat opencv_disparity(imgUIzq.size().height, imgUIzq.size().width, CV_16S, Scalar(0));
-					Mat opencv_disparity_image(imgUIzq.size().height, imgUIzq.size().width, CV_8U, Scalar(0));
+//					Mat opencv_disparity(imgUIzq.size().height, imgUIzq.size().width, CV_16S, Scalar(0));
+//					Mat opencv_disparity_image(imgUIzq.size().height, imgUIzq.size().width, CV_8U, Scalar(0));
+//
+//					StereoBM stereo;
+//
+//					stereo.state->preFilterType = 1;
+//					stereo.state->preFilterSize = 41;
+//					stereo.state->preFilterCap = 31;
+//					stereo.state->SADWindowSize = 31;
+//					stereo.state->minDisparity = -65;
+//					stereo.state->numberOfDisparities = 128;
+//					stereo.state->textureThreshold = 10;
+//					stereo.state->uniquenessRatio = 15;
 
-					StereoBM stereo;
+//					while(1)
+//					{
+//						cvtColor(imgUIzq, imgUIzq, CV_BGR2GRAY);
+//						cvtColor(imgUDer, imgUDer, CV_BGR2GRAY);
+//
+//						Mat disparity_image;
+//
+//						stereo(imgUIzq, imgUDer, opencv_disparity);
+//
+//						//opencv_disparity.convertTo(opencv_disparity_image, CV_8U);
+//
+//						imshow("disparity_image StereoBM", opencv_disparity);
+//						cvWaitKey(15);
+//
+//					}
 
-					stereo.state->preFilterType = 1;
-					stereo.state->preFilterSize = 41;
-					stereo.state->preFilterCap = 31;
-					stereo.state->SADWindowSize = 31;
-					stereo.state->minDisparity = -64;
-					stereo.state->numberOfDisparities = 128;
-					stereo.state->textureThreshold = 10;
-					stereo.state->uniquenessRatio = 15;
 
-					while(1)
-					{
-						cvtColor(imgUIzq, imgUIzq, CV_BGR2GRAY);
-						cvtColor(imgUDer, imgUDer, CV_BGR2GRAY);
+//					Mat imagen11, imagen22;
+//
+//					Mat opencv_disparity2(imagen1.size().height, imagen1.size().width, CV_16S, Scalar(0));
+//					Mat opencv_disparity_image2(imagen1.size().height, imagen1.size().width, CV_8U, Scalar(0));
+//					Mat disparityBMNorm;
+//
+//					StereoBM stereo2;
+//
+//					stereo2.state->preFilterType = 1;
+//					stereo2.state->preFilterSize = 41;
+//					stereo2.state->preFilterCap = 31;
+//					stereo2.state->SADWindowSize = 31;
+//					stereo2.state->minDisparity = -105;
+//					stereo2.state->numberOfDisparities = 128;
+//					stereo2.state->textureThreshold = 10;
+//					stereo2.state->uniquenessRatio = 15;
+//
+//					cvtColor(imagen1, imagen11, CV_BGR2GRAY);
+//					cvtColor(imagen2, imagen22, CV_BGR2GRAY);
+//
+//					//Mat disparity_image2;
+//
+//					stereo(imagen11, imagen22, opencv_disparity2);
+//
+//					//opencv_disparity.convertTo(opencv_disparity_image, CV_8U);
+//
+//					normalize(opencv_disparity2, opencv_disparity_image2, 0, 255, CV_MINMAX, CV_8U);
+//
+//					imshow("disparity_image StereoBM 2", opencv_disparity_image2);
 
-						Mat disparity_image;
 
-						stereo(imgUIzq, imgUDer, opencv_disparity);
 
-						opencv_disparity.convertTo(opencv_disparity_image, CV_8U);
+//					Mat resultCurrentFrameCPU, resultNorCurrentFrameCPU;
+//
+//					StereoSGBM sbm;
+//
+//					sbm.SADWindowSize = 3;
+//					sbm.numberOfDisparities = 144;
+//					sbm.preFilterCap = 63;
+//					sbm.minDisparity = -39;
+//					sbm.uniquenessRatio = 10;
+//					sbm.speckleWindowSize = 100;
+//					sbm.speckleRange = 32;
+//					sbm.disp12MaxDiff = 1;
+//					sbm.fullDP = false;
+//					sbm.P1 = 216;
+//					sbm.P2 = 864;
+//
+//					sbm(imagen1, imagen2, resultCurrentFrameCPU);
+//
+//					normalize(resultCurrentFrameCPU, resultNorCurrentFrameCPU, 0, 255, CV_MINMAX, CV_8U);
+//
+//					imshow("disparity_image StereoSGBM", resultNorCurrentFrameCPU);
 
-						imshow("disparity_image", opencv_disparity_image);
-						cvWaitKey(15);
 
-					}
+//					Mat* pair;
+//					Mat part;
+//
+//					pair = CreateMat( imgUIzq.height*2, imgUIzq.width, CV_8UC3 );
+//
+//                    cvGetCols( pair, &part, 0, imgUIzq.width );
+//                    cvCvtColor( img1r, &part, CV_GRAY2BGR );
+//                    cvGetCols( pair, &part, imgUIzq.width, imgUIzq.width*2 );
+//                    cvCvtColor( img2r, &part, CV_GRAY2BGR );
+//
+//
+//					for( j = 0; j < imgUIzq.width; j += 16 )
+//						cvLine( pair, Point(j,0), Point(j,imgUIzq.height*2), CV_RGB(0,255,0));
+//
+//					cvShowImage( "rectified", pair );
+
+				}
+
+				if(key == 98)
+				{
+					Mat imagenIzq = imread("imagen1.png");
+					Mat imagenDer = imread("imagen2.png");
+
+					correspondenciaBM(imagenIzq, imagenDer);
+				}
+
+				if(key == 115)
+				{
+					Mat imagenIzq = imread("imagen1.png");
+					Mat imagenDer = imread("imagen2.png");
+
+					correspondenciaSGBM(imagenIzq, imagenDer);
 				}
 
 			}
