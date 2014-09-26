@@ -31,26 +31,56 @@ void loadImagePair(Mat &img1, Mat &img2, int i)
     img2 = imread(ss2.str());
 }
 
+void correspondenciaBIRCHFIELD(Mat &imagenIzq, Mat &imagenDer)
+{
+	IplImage* srcLeft = cvLoadImage("imagen1.png",1);
+	IplImage* srcRight = cvLoadImage("imagen2.png",1);
+	IplImage* leftImage = cvCreateImage(cvGetSize(srcLeft), IPL_DEPTH_8U, 1);
+	IplImage* rightImage = cvCreateImage(cvGetSize(srcRight), IPL_DEPTH_8U, 1);
+	IplImage* depthImage = cvCreateImage(cvGetSize(srcRight), IPL_DEPTH_8U, 1);
+
+	cvCvtColor(srcLeft, leftImage, CV_BGR2GRAY);
+	cvCvtColor(srcRight, rightImage, CV_BGR2GRAY);
+
+	cvFindStereoCorrespondence( leftImage, rightImage, CV_DISPARITY_BIRCHFIELD, depthImage, 50, 15, 3, 6, 8, 15);
+
+	cvNamedWindow( "disparity" );
+	cvShowImage( "disparity", depthImage );
+}
+
 void correspondenciaBM(Mat &imagenIzq, Mat &imagenDer)
 {
-	Mat imagenIzq1CH, imagenDer1CH;
+	Mat imagenIzq1CH, imagenDer1CH, g_disp;
 
 	Mat MapaDispBM(imagenIzq.size().height, imagenIzq.size().width, CV_16S, Scalar(0));
 	Mat MapaDispBM_Norm(imagenIzq.size().height, imagenIzq.size().width, CV_8U, Scalar(0));
 
+	int spatialRad = 10;			// mean shift parameters
+	int colorRad = 10;
+	int maxPyrLevel = 2;
+
+	Mat ImgLeftFilter;
+	Mat ImgRightFilter;
+
+	pyrMeanShiftFiltering(imagenIzq, ImgLeftFilter, spatialRad, colorRad, maxPyrLevel );
+	pyrMeanShiftFiltering(imagenDer, ImgRightFilter, spatialRad, colorRad, maxPyrLevel );
+
 	StereoBM stereoBM;
 
 	stereoBM.state->preFilterType = 1;
-	stereoBM.state->preFilterSize = 41;
-	stereoBM.state->preFilterCap = 31;
-	stereoBM.state->SADWindowSize = 31;
-	stereoBM.state->minDisparity = -65;
-	stereoBM.state->numberOfDisparities = 128;
-	stereoBM.state->textureThreshold = 10;
-	stereoBM.state->uniquenessRatio = 15;
+	stereoBM.state->preFilterSize = 9;
+	stereoBM.state->preFilterCap = 32;
+	stereoBM.state->SADWindowSize = 9;
+	stereoBM.state->minDisparity = 0;
+	stereoBM.state->numberOfDisparities = 32;
+	stereoBM.state->textureThreshold = 0;
+	stereoBM.state->uniquenessRatio = 0;
 
-	cvtColor(imagenIzq, imagenIzq1CH, CV_BGR2GRAY); //Convierte las imagenes a CV_8UC1 (1 canal)
-	cvtColor(imagenDer, imagenDer1CH, CV_BGR2GRAY);
+	cvtColor(ImgLeftFilter, imagenIzq1CH, CV_BGR2GRAY); //Convierte las imagenes a CV_8UC1 (1 canal)
+	cvtColor(ImgRightFilter, imagenDer1CH, CV_BGR2GRAY);
+
+	imshow("Imagen con filtro", imagenIzq1CH);
+	imshow("Imagen con filtro", imagenDer1CH);
 
 	stereoBM(imagenIzq1CH, imagenDer1CH, MapaDispBM);
 
