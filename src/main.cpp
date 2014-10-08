@@ -31,10 +31,77 @@ void loadImagePair(Mat &img1, Mat &img2, int i)
     img2 = imread(ss2.str());
 }
 
+static void saveXYZ(const char* filename, const Mat& mat)
+{
+    const double max_z = 1.0e4;
+    FILE* fp = fopen(filename, "wt");
+    for(int y = 0; y < mat.rows; y++)
+    {
+        for(int x = 0; x < mat.cols; x++)
+        {
+            Vec3f point = mat.at<Vec3f>(y,x);
+            if(fabs(point[2] - max_z) < FLT_EPSILON || fabs(point[2]) > max_z) continue;
+            fprintf(fp, "%f %f %f\n", point[0], point[1], point[2]);
+        }
+    }
+    fclose(fp);
+}
+
+void histograma(Mat mapadisp)
+{
+
+	// (2)allocate Mat to draw a histogram image
+	const int ch_width = 260;
+	const int sch = mapadisp.channels();
+	Mat hist_img(Size(ch_width * sch, 200), CV_8UC3, Scalar::all(255));
+
+	vector<MatND> hist(3);
+	const int hist_size = 256;
+	const int hdims[] = {hist_size};
+	const float hranges[] = {0,256};
+	const float* ranges[] = {hranges};
+	double max_val = .0;
+
+	if(sch==1) {
+		// (3a)if the source image has single-channel, calculate its histogram
+		calcHist(&mapadisp, 1, 0, Mat(), hist[0], 1, hdims, ranges, true, false);
+		minMaxLoc(hist[0], 0, &max_val);
+	} else {
+		// (3b)if the souce image has multi-channel, calculate histogram of each plane
+		for(int i=0; i<sch; ++i) {
+			calcHist(&mapadisp, 1, &i, Mat(), hist[i], 1, hdims, ranges, true, false);
+			double tmp_val;
+			minMaxLoc(hist[i], 0, &tmp_val);
+			max_val = max_val < tmp_val ? tmp_val : max_val;
+		}
+	}
+
+	// (4)scale and draw the histogram(s)
+	Scalar color = Scalar::all(100);
+	for(int i=0; i<sch; i++) {
+		if(sch==3)
+			color = Scalar((0xaa<<i*8)&0x0000ff,(0xaa<<i*8)&0x00ff00,(0xaa<<i*8)&0xff0000, 0);
+		hist[i].convertTo(hist[i], hist[i].type(), max_val?200./max_val:0.,0);
+		for(int j=0; j<hist_size; ++j) {
+			int bin_w = saturate_cast<int>((double)ch_width/hist_size);
+			rectangle(hist_img,
+					Point(j*bin_w+(i*ch_width), hist_img.rows),
+					Point((j+1)*bin_w+(i*ch_width), hist_img.rows-saturate_cast<int>(hist[i].at<float>(j))),
+					color, -1);
+		}
+	}
+	// (5)show the histogram image, and quit when any key pressed
+	namedWindow("Histograma", CV_WINDOW_AUTOSIZE);
+	imshow("Histograma", hist_img);
+}
+
+
 void correspondenciaBIRCHFIELD(Mat &imagenIzq, Mat &imagenDer)
 {
-	IplImage* srcLeft = cvLoadImage("imagen1.png",1);
-	IplImage* srcRight = cvLoadImage("imagen2.png",1);
+	IplImage _srcLeft = imagenIzq;
+	IplImage _srcRight = imagenDer;
+	IplImage* srcLeft = &_srcLeft;
+	IplImage* srcRight = &_srcRight;
 	IplImage* leftImage = cvCreateImage(cvGetSize(srcLeft), IPL_DEPTH_8U, 1);
 	IplImage* rightImage = cvCreateImage(cvGetSize(srcRight), IPL_DEPTH_8U, 1);
 	IplImage* depthImage = cvCreateImage(cvGetSize(srcRight), IPL_DEPTH_8U, 1);
@@ -44,8 +111,62 @@ void correspondenciaBIRCHFIELD(Mat &imagenIzq, Mat &imagenDer)
 
 	cvFindStereoCorrespondence( leftImage, rightImage, CV_DISPARITY_BIRCHFIELD, depthImage, 50, 15, 3, 6, 8, 15);
 
-	cvNamedWindow( "disparity" );
-	cvShowImage( "disparity", depthImage );
+	Mat MapaDipBIRCHFIELD(depthImage);
+
+	imshow("Mapa de Disparidad BIRCHFIELD", MapaDipBIRCHFIELD);
+	imwrite("MapaDisparidad.png", MapaDipBIRCHFIELD);
+
+	cout << "Disparidad(1,1)=" << MapaDipBIRCHFIELD.at<double>(1,1) << endl;
+
+	//...
+
+	Mat Q = Mat(4, 4, CV_64F);
+
+	FileStorage fs2("stereocalib.yml", FileStorage::READ);
+	fs2["Q"] >> Q;
+	fs2.release();
+
+	double Q00, Q01, Q02, Q03, Q10, Q11, Q12, Q13, Q20, Q21, Q22, Q23, Q30, Q31, Q32, Q33;
+	Q00 = Q.at<double>(0,0);
+	Q01 = Q.at<double>(0,1);
+	Q02 = Q.at<double>(0,2);
+	Q03 = Q.at<double>(0,3);
+	Q10 = Q.at<double>(1,0);
+	Q11 = Q.at<double>(1,1);
+	Q12 = Q.at<double>(1,2);
+	Q13 = Q.at<double>(1,3);
+	Q20 = Q.at<double>(2,0);
+	Q21 = Q.at<double>(2,1);
+	Q22 = Q.at<double>(2,2);
+	Q23 = Q.at<double>(2,3);
+	Q30 = Q.at<double>(3,0);
+	Q31 = Q.at<double>(3,1);
+	Q32 = Q.at<double>(3,2);
+	Q33 = Q.at<double>(3,3);
+
+	cout << "Q(0,0) = " << Q00 << " Q(0,1) = " << Q01 << " Q(0,2) = " << Q02 << " Q(0,3) = "<< Q03 <<
+			" Q(1,0) = " << Q10 << " Q(1,1) = " << Q11 << " Q(1,2) = " << Q12 << " Q(1,3) = "<< Q13 <<
+			" Q(2,0) = " << Q20 << " Q(2,1) = " << Q21 << " Q(2,2) = "<< Q22 << " Q(2,3) = " << Q23 <<
+			" Q(3,0) = " << Q30 << " Q(3,1) = " << Q31 << " Q(3,2) = "<< Q32 <<" Q(3,3) = "<< Q33 << endl;
+
+	histograma(MapaDipBIRCHFIELD);
+
+//
+//	  Mat recons3D(MapaDipBIRCHFIELD.size(), CV_32FC3);
+//	  //Reproject image to 3D
+//	  cout << "Reprojecting image to 3D..." << endl;
+//	  reprojectImageTo3D( MapaDipBIRCHFIELD, recons3D, Q, false, CV_32F );
+//	  imshow("algo xD", recons3D);
+//
+//	  	FileStorage storage("MapaDipBIRCHFIELD.yml", FileStorage::WRITE);
+//	  	for(int i=0; i<MapaDipBIRCHFIELD.rows; i++)
+//	  	{
+//	  		for(int j=0; j<MapaDipBIRCHFIELD.cols; j++)
+//	  		{
+//	  			storage << "MapaDipBIRCHFIELD" << recons3D.at<double>(i,j);
+//	  		}
+//	  	}
+//	  	storage.release();
 }
 
 void correspondenciaBM(Mat &imagenIzq, Mat &imagenDer)
@@ -54,16 +175,6 @@ void correspondenciaBM(Mat &imagenIzq, Mat &imagenDer)
 
 	Mat MapaDispBM(imagenIzq.size().height, imagenIzq.size().width, CV_16S, Scalar(0));
 	Mat MapaDispBM_Norm(imagenIzq.size().height, imagenIzq.size().width, CV_8U, Scalar(0));
-
-	int spatialRad = 10;			// mean shift parameters
-	int colorRad = 10;
-	int maxPyrLevel = 2;
-
-	Mat ImgLeftFilter;
-	Mat ImgRightFilter;
-
-	pyrMeanShiftFiltering(imagenIzq, ImgLeftFilter, spatialRad, colorRad, maxPyrLevel );
-	pyrMeanShiftFiltering(imagenDer, ImgRightFilter, spatialRad, colorRad, maxPyrLevel );
 
 	StereoBM stereoBM;
 
@@ -76,11 +187,8 @@ void correspondenciaBM(Mat &imagenIzq, Mat &imagenDer)
 	stereoBM.state->textureThreshold = 0;
 	stereoBM.state->uniquenessRatio = 0;
 
-	cvtColor(ImgLeftFilter, imagenIzq1CH, CV_BGR2GRAY); //Convierte las imagenes a CV_8UC1 (1 canal)
-	cvtColor(ImgRightFilter, imagenDer1CH, CV_BGR2GRAY);
-
-	imshow("Imagen con filtro", imagenIzq1CH);
-	imshow("Imagen con filtro", imagenDer1CH);
+	cvtColor(imagenIzq, imagenIzq1CH, CV_BGR2GRAY); //Convierte las imagenes a CV_8UC1 (1 canal)
+	cvtColor(imagenDer, imagenDer1CH, CV_BGR2GRAY);
 
 	stereoBM(imagenIzq1CH, imagenDer1CH, MapaDispBM);
 
@@ -111,7 +219,39 @@ void correspondenciaSGBM(Mat &imagenIzq, Mat &imagenDer)
 
 	normalize(MapaDispSGBM, MapaDispSGBM_Norm, 0, 255, CV_MINMAX, CV_8U);
 
+	cout << "Coordenadas en Mapa de Disparidad 8U = " << MapaDispSGBM_Norm.at<Vec3f>(152,82) << endl;
+
+	circle(MapaDispSGBM_Norm, Point(152,82), 5, Scalar(255,0,0), 1);
+	//circle(MapaDispSGBM_Norm, Point(383,466), 5, Scalar(150,0,0), 1);
+	//circle(MapaDispSGBM_Norm, Point(400,281), 5, Scalar(200,0,0), 1);
+	//circle(MapaDispSGBM_Norm, Point(99,476), 5, Scalar(210,0,0), 1);
+
+	Mat MapaDispSGBM_Norm_32F;
+	MapaDispSGBM_Norm.convertTo(MapaDispSGBM_Norm_32F, CV_32F); //Convertir mapa de disparidad en 32 bits
+
+	cout << "Coordenadas en Mapa de Disparidad 32F = " << MapaDispSGBM_Norm_32F.at<Vec3f>(152,82) << endl;
+
 	imshow("Mapa de Disparidad StereoSGBM", MapaDispSGBM_Norm);
+
+	//cout << "Disparidad(152,82)=" << MapaDispSGBM_Norm.at<double>(152,82) << endl;
+	//cout << "Disparidad(400,281)=" << MapaDispSGBM_Norm.at<double>(400,281) << endl;
+	//cout << "Disparidad(383,466)=" << MapaDispSGBM_Norm.at<double>(383,466) << endl;
+	//cout << "Disparidad(99,476)=" << MapaDispSGBM_Norm.at<double>(99,476) << endl;
+
+	Mat Q = Mat(4, 4, CV_64F);
+	FileStorage fs2("stereocalib.yml", FileStorage::READ);
+	fs2["Q"] >> Q;
+	fs2.release();
+
+	Mat recons3D(MapaDispSGBM_Norm_32F.size(), CV_32FC3);
+	//Reproject image to 3D
+	cout << "Reprojecting image to 3D..." << endl;
+	reprojectImageTo3D(MapaDispSGBM_Norm_32F, recons3D, Q, false, CV_32F);
+	//imshow("algo xD", recons3D);
+
+	cout << recons3D.at<Vec3f>(152,82) << endl;
+
+	//saveXYZ("Hola", recons3D);
 }
 
 int main(int argc, char *argv[])
@@ -196,46 +336,6 @@ int main(int argc, char *argv[])
 					lista.close();
 				}
 
-				if(key == 97)
-				{
-					Mat imgI = imread("imgLeft_0.png");
-					Mat imgD = imread("imgRight_0.png");
-					Mat Anaglifo;
-
-					for(int i=0; i<imgI.rows; i++)
-					{
-						for(int j=0; j<imgI.cols; j++)
-						{
-							// You can now access the pixel value with cv::Vec3b 0->Azul; 1->Verde; 2->Rojo
-							imgI.at<Vec3b>(i,j)[0] = 0;
-							imgI.at<Vec3b>(i,j)[1] = 0;
-						}
-					}
-
-					for(int i=0; i<imgD.rows; i++)
-					{
-						for(int j=0; j<imgD.cols; j++)
-						{
-							// You can now access the pixel value with cv::Vec3b
-							imgD.at<Vec3b>(i,j)[2] = 0;
-						}
-					}
-
-					namedWindow( "IMAGEN MODIFICADA IZQ",1);
-					imshow( "IMAGEN MODIFICADA IZQ", imgI );
-
-					namedWindow( "IMAGEN MODIFICADA DER",1);
-					imshow( "IMAGEN MODIFICADA DER", imgD );
-
-					double alpha = 0.5;
-					double beta = 0.5;
-
-					addWeighted( imgI, alpha, imgD, beta, 0.0, Anaglifo);
-
-					namedWindow( "ANAGLIFO",1);
-					imshow( "ANAGLIFO", Anaglifo );
-				}
-
 				if(key == 109)
 				{
 					int spatialRad = 10;			// mean shift parameters
@@ -260,15 +360,15 @@ int main(int argc, char *argv[])
 				if(key == 107)
 				{
 					// The camera properties
-					int w = 640;
-					int h = 480;
-					int fps = 20;
+					//int w = 640;
+					//int h = 480;
+					//int fps = 20;
 
 					// The chessboard properties
 					//CvSize chessboardSize(9,6);
 
 					CvSize chessboardSize = cvSize(9,6);
-					float squareSize = 1.0f;
+					float squareSize = 2.5f;
 
 					// This should contain the physical location of each corner, but since we don't know them, we are assigning constant positions
 					vector<vector<Point3f> > objPoints;
@@ -495,126 +595,72 @@ int main(int argc, char *argv[])
 
 					cout << "Imagen Derecha Rectificada ¡Guardada!" << endl;
 					imwrite("imgRightRect.png", imgUDer);
-
-//					Mat opencv_disparity(imgUIzq.size().height, imgUIzq.size().width, CV_16S, Scalar(0));
-//					Mat opencv_disparity_image(imgUIzq.size().height, imgUIzq.size().width, CV_8U, Scalar(0));
-//
-//					StereoBM stereo;
-//
-//					stereo.state->preFilterType = 1;
-//					stereo.state->preFilterSize = 41;
-//					stereo.state->preFilterCap = 31;
-//					stereo.state->SADWindowSize = 31;
-//					stereo.state->minDisparity = -65;
-//					stereo.state->numberOfDisparities = 128;
-//					stereo.state->textureThreshold = 10;
-//					stereo.state->uniquenessRatio = 15;
-
-//					while(1)
-//					{
-//						cvtColor(imgUIzq, imgUIzq, CV_BGR2GRAY);
-//						cvtColor(imgUDer, imgUDer, CV_BGR2GRAY);
-//
-//						Mat disparity_image;
-//
-//						stereo(imgUIzq, imgUDer, opencv_disparity);
-//
-//						//opencv_disparity.convertTo(opencv_disparity_image, CV_8U);
-//
-//						imshow("disparity_image StereoBM", opencv_disparity);
-//						cvWaitKey(15);
-//
-//					}
-
-
-//					Mat imagen11, imagen22;
-//
-//					Mat opencv_disparity2(imagen1.size().height, imagen1.size().width, CV_16S, Scalar(0));
-//					Mat opencv_disparity_image2(imagen1.size().height, imagen1.size().width, CV_8U, Scalar(0));
-//					Mat disparityBMNorm;
-//
-//					StereoBM stereo2;
-//
-//					stereo2.state->preFilterType = 1;
-//					stereo2.state->preFilterSize = 41;
-//					stereo2.state->preFilterCap = 31;
-//					stereo2.state->SADWindowSize = 31;
-//					stereo2.state->minDisparity = -105;
-//					stereo2.state->numberOfDisparities = 128;
-//					stereo2.state->textureThreshold = 10;
-//					stereo2.state->uniquenessRatio = 15;
-//
-//					cvtColor(imagen1, imagen11, CV_BGR2GRAY);
-//					cvtColor(imagen2, imagen22, CV_BGR2GRAY);
-//
-//					//Mat disparity_image2;
-//
-//					stereo(imagen11, imagen22, opencv_disparity2);
-//
-//					//opencv_disparity.convertTo(opencv_disparity_image, CV_8U);
-//
-//					normalize(opencv_disparity2, opencv_disparity_image2, 0, 255, CV_MINMAX, CV_8U);
-//
-//					imshow("disparity_image StereoBM 2", opencv_disparity_image2);
-
-
-
-//					Mat resultCurrentFrameCPU, resultNorCurrentFrameCPU;
-//
-//					StereoSGBM sbm;
-//
-//					sbm.SADWindowSize = 3;
-//					sbm.numberOfDisparities = 144;
-//					sbm.preFilterCap = 63;
-//					sbm.minDisparity = -39;
-//					sbm.uniquenessRatio = 10;
-//					sbm.speckleWindowSize = 100;
-//					sbm.speckleRange = 32;
-//					sbm.disp12MaxDiff = 1;
-//					sbm.fullDP = false;
-//					sbm.P1 = 216;
-//					sbm.P2 = 864;
-//
-//					sbm(imagen1, imagen2, resultCurrentFrameCPU);
-//
-//					normalize(resultCurrentFrameCPU, resultNorCurrentFrameCPU, 0, 255, CV_MINMAX, CV_8U);
-//
-//					imshow("disparity_image StereoSGBM", resultNorCurrentFrameCPU);
-
-
-//					Mat* pair;
-//					Mat part;
-//
-//					pair = CreateMat( imgUIzq.height*2, imgUIzq.width, CV_8UC3 );
-//
-//                    cvGetCols( pair, &part, 0, imgUIzq.width );
-//                    cvCvtColor( img1r, &part, CV_GRAY2BGR );
-//                    cvGetCols( pair, &part, imgUIzq.width, imgUIzq.width*2 );
-//                    cvCvtColor( img2r, &part, CV_GRAY2BGR );
-//
-//
-//					for( j = 0; j < imgUIzq.width; j += 16 )
-//						cvLine( pair, Point(j,0), Point(j,imgUIzq.height*2), CV_RGB(0,255,0));
-//
-//					cvShowImage( "rectified", pair );
-
 				}
 
 				if(key == 98)
 				{
-					Mat imagenIzq = imread("imagen1.png");
-					Mat imagenDer = imread("imagen2.png");
+					Mat imagenIzq = imread("imgLeftRect.png");
+					Mat imagenDer = imread("imgRightRect.png");
 
 					correspondenciaBM(imagenIzq, imagenDer);
 				}
 
 				if(key == 115)
 				{
-					Mat imagenIzq = imread("imagen1.png");
-					Mat imagenDer = imread("imagen2.png");
+					Mat imagenIzq = imread("imgLeftRect.png");
+					Mat imagenDer = imread("imgRightRect.png");
 
 					correspondenciaSGBM(imagenIzq, imagenDer);
 				}
+
+				if(key == 116)
+				{
+					Mat imagenIzq = imread("imagen1.png");
+					Mat imagenDer = imread("imagen2.png");
+
+					correspondenciaBIRCHFIELD(imagenIzq, imagenDer);
+				}
+
+				if(key == 97)
+				{
+					Mat imgI = imread("imgLeft_0.png");
+					Mat imgD = imread("imgRight_0.png");
+					Mat Anaglifo;
+
+					for(int i=0; i<imgI.rows; i++)
+					{
+						for(int j=0; j<imgI.cols; j++)
+						{
+							// You can now access the pixel value with cv::Vec3b 0->Azul; 1->Verde; 2->Rojo
+							imgI.at<Vec3b>(i,j)[0] = 0;
+							imgI.at<Vec3b>(i,j)[1] = 0;
+						}
+					}
+
+					for(int i=0; i<imgD.rows; i++)
+					{
+						for(int j=0; j<imgD.cols; j++)
+						{
+							// You can now access the pixel value with cv::Vec3b
+							imgD.at<Vec3b>(i,j)[2] = 0;
+						}
+					}
+
+					namedWindow( "IMAGEN MODIFICADA IZQ",1);
+					imshow( "IMAGEN MODIFICADA IZQ", imgI );
+
+					namedWindow( "IMAGEN MODIFICADA DER",1);
+					imshow( "IMAGEN MODIFICADA DER", imgD );
+
+					double alpha = 0.5;
+					double beta = 0.5;
+
+					addWeighted( imgI, alpha, imgD, beta, 0.0, Anaglifo);
+
+					namedWindow( "ANAGLIFO",1);
+					imshow( "ANAGLIFO", Anaglifo );
+				}
+
 
 			}
 
